@@ -1,0 +1,20 @@
+Package: lv2sra
+Type: Package
+Title: Generating SRA submissions from LIMS data.
+Version: 0.1.0
+Author: Brendan J. Kelly
+Maintainer: Brendan J. Kelly <brendank@upenn.edu>
+Description: Converts common-format LIMS data listings into metadata appropriate for SRA biosamples (Microbe or Metagenome packages).
+URL: http://github.com/bjklab/lv2sra
+Depends:
+    R (>= 4.0)
+Imports:
+    dplyr,
+    purrr,
+    tidyr,
+    tibble,
+    readxl
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Config/roxygen2/version: 8.1.1
