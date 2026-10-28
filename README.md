@@ -1,4 +1,4 @@
-# malk
+# lv2sra
 
 The *lv2sra* package is designed to generate `Microbe` (v1.0) and `Metagenome or environmental` (v1.0) BioSample submission descriptions to accompany sequence data submission to the NCBI SRA.  
 
