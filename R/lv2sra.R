@@ -12,9 +12,14 @@
 #' Both tables share `sample_name` (the report's "Sample" column), which the
 #' NCBI Submission Portal uses to join SRA runs to BioSamples.
 #'
+#' Samples whose "Sample Type" is a laboratory derivative (see
+#' `derived_sample_types`, e.g. DNA or Cell Lysate) are described by the
+#' specimen they came from, taken from the "Original Sample Type" column. That
+#' specimen type sets the organism, `isolation_source` and body site.
+#'
 #' @param input_xlsx Path to the sample report. Must contain the columns
-#'   "Sample", "Sample Type" and "Collection Date"; "External Participant ID"
-#'   and "Microbial Species" are used when present.
+#'   "Sample", "Sample Type" and "Collection Date". "External Participant ID",
+#'   "Original Sample Type" and "Microbial Species" are used when present.
 #' @param package BioSample package to target: `"metagenome"`
 #'   (Metagenome.environmental.1.0) or `"microbe"` (Microbe.1.0).
 #' @param template_xlsx Path to the matching NCBI BioSample template (.xlsx).
@@ -30,20 +35,42 @@
 #' @param lat_lon Latitude and longitude, e.g. `"39.95 N 75.19 W"`. Mandatory
 #'   for the metagenome package; optional (left blank if `"missing"`) for the
 #'   microbe package.
-#' @param host Natural host organism, as a full taxonomic name.
+#' @param host Natural host organism, as a full taxonomic name. Only applied
+#'   to samples from a human metagenome (organism starting with "human"); left
+#'   blank for environmental samples and blanks.
 #' @param metagenome_organism For the metagenome package: either a named
-#'   character vector mapping "Sample Type" values to NCBI metagenome organism
-#'   names, or a single string applied to every sample. Unmapped sample types
-#'   get `"missing"`. The default maps axilla and groin swabs to
-#'   "human skin metagenome" and perirectal and stool swabs to
-#'   "human gut metagenome".
+#'   character vector mapping specimen types to NCBI Taxonomy metagenome
+#'   names, or a single string applied to every sample. Unmapped types get
+#'   `"missing"` and a warning. The default covers the specimen types found in
+#'   the MOTION LabVantage reports; every name is a valid NCBI Taxonomy name:
+#'   \itemize{
+#'     \item stool, feces, stool in glycerol/RNAlater, stool, rectal and
+#'       perirectal swabs: "human gut metagenome"
+#'     \item axilla and groin swabs: "human skin metagenome"
+#'     \item nasal swabs: "human nasopharyngeal metagenome"
+#'     \item oral and throat swabs: "human oral metagenome"; saliva:
+#'       "human saliva metagenome"
+#'     \item sputum: "human sputum metagenome"
+#'     \item endotracheal aspirates and tracheostomy inner cannulas:
+#'       "human tracheal metagenome"
+#'     \item urine: "human urinary tract metagenome"
+#'     \item serum, plasma and whole blood: "human blood metagenome"
+#'     \item environmental, environment and fomite swabs: "indoor metagenome"
+#'       (use "hospital metagenome" if all of them are from hospital surfaces)
+#'     \item buffer (reagent blanks): "blank sample"
+#'   }
+#'   Bacterial cultures and isolates are left unmapped: they belong in the
+#'   microbe package.
+#' @param derived_sample_types "Sample Type" values that are laboratory
+#'   derivatives rather than specimens. For these samples the "Original Sample
+#'   Type" column is used instead, when it is filled in.
 #' @param microbe_organism For the microbe package: organism name applied to
 #'   every sample (or a vector with one value per sample). If `NULL`, the
 #'   report's "Microbial Species" column is used; samples with no organism get
 #'   `"missing"` and a warning.
 #' @param microbe_sample_type For the microbe package: value of the mandatory
 #'   `sample_type` attribute, e.g. `"cell culture"` or `"mixed culture"`.
-#' @param body_site Named character vector mapping "Sample Type" values to the
+#' @param body_site Named character vector mapping specimen types to the
 #'   body site written to `host_tissue_sampled` (microbe package only).
 #' @param include_subject_id If `TRUE`, the report's "External Participant ID"
 #'   is added as the custom BioSample attribute `host_subject_id`. The internal
@@ -88,18 +115,69 @@ prepare_sra_metadata <- function(input_xlsx,
                                  lat_lon = "missing",
                                  host = "Homo sapiens",
                                  metagenome_organism = c(
-                                   "Axilla Swab"     = "human skin metagenome",
-                                   "Groin Swab"      = "human skin metagenome",
-                                   "Perirectal Swab" = "human gut metagenome",
-                                   "Stool Swab"      = "human gut metagenome"
+                                   # Gut
+                                   "Stool"                  = "human gut metagenome",
+                                   "Feces"                  = "human gut metagenome",
+                                   "Stool in Glycerol"      = "human gut metagenome",
+                                   "Stool in RNALater"      = "human gut metagenome",
+                                   "Stool Swab"             = "human gut metagenome",
+                                   "Rectal Swab"            = "human gut metagenome",
+                                   "Perirectal Swab"        = "human gut metagenome",
+                                   # Skin
+                                   "Axilla Swab"            = "human skin metagenome",
+                                   "Groin Swab"             = "human skin metagenome",
+                                   # Upper airway and mouth
+                                   "Nasal Swab"             = "human nasopharyngeal metagenome",
+                                   "Oral Swab"              = "human oral metagenome",
+                                   "Throat Swab"            = "human oral metagenome",
+                                   "Saliva"                 = "human saliva metagenome",
+                                   # Lower airway
+                                   "Sputum"                 = "human sputum metagenome",
+                                   "EndotrachealAspirate"   = "human tracheal metagenome",
+                                   "Inner Cannula"          = "human tracheal metagenome",
+                                   # Urine and blood
+                                   "Urine"                  = "human urinary tract metagenome",
+                                   "Blood Serum"            = "human blood metagenome",
+                                   "Plasma (EDTA)"          = "human blood metagenome",
+                                   "Whole Blood"            = "human blood metagenome",
+                                   "Whole Blood (EDTA)"     = "human blood metagenome",
+                                   "Whole Blood (Heparin)"  = "human blood metagenome",
+                                   # Built environment
+                                   "Environmental Swab"     = "indoor metagenome",
+                                   "Environment"            = "indoor metagenome",
+                                   "Fomite Swab"            = "indoor metagenome",
+                                   # Negative controls
+                                   "Buffer"                 = "blank sample"
+                                 ),
+                                 derived_sample_types = c(
+                                   "DNA", "RNA", "Cell Lysate", "Cell Pellet",
+                                   "Cells", "Cell Suspension", "Fluid", "Virus"
                                  ),
                                  microbe_organism = NULL,
                                  microbe_sample_type = "missing",
                                  body_site = c(
-                                   "Axilla Swab"     = "axilla",
-                                   "Groin Swab"      = "groin",
-                                   "Perirectal Swab" = "perirectal region",
-                                   "Stool Swab"      = "feces"
+                                   "Stool"                  = "feces",
+                                   "Feces"                  = "feces",
+                                   "Stool in Glycerol"      = "feces",
+                                   "Stool in RNALater"      = "feces",
+                                   "Stool Swab"             = "feces",
+                                   "Rectal Swab"            = "rectum",
+                                   "Perirectal Swab"        = "perirectal region",
+                                   "Axilla Swab"            = "axilla",
+                                   "Groin Swab"             = "groin",
+                                   "Nasal Swab"             = "anterior nares",
+                                   "Oral Swab"              = "oral cavity",
+                                   "Throat Swab"            = "oropharynx",
+                                   "Saliva"                 = "oral cavity",
+                                   "Sputum"                 = "lower respiratory tract",
+                                   "EndotrachealAspirate"   = "trachea",
+                                   "Inner Cannula"          = "trachea",
+                                   "Urine"                  = "urinary tract",
+                                   "Blood Serum"            = "blood",
+                                   "Plasma (EDTA)"          = "blood",
+                                   "Whole Blood"            = "blood",
+                                   "Whole Blood (EDTA)"     = "blood",
+                                   "Whole Blood (Heparin)"  = "blood"
                                  ),
                                  include_subject_id = TRUE,
                                  fastq_dir = NULL,
@@ -161,7 +239,17 @@ prepare_sra_metadata <- function(input_xlsx,
   }
 
   n <- nrow(report)
+
+  # ---- Specimen type ---------------------------------------------------------
+  # Derivatives (DNA, Cell Lysate, ...) are described by the specimen they came
+  # from, recorded in "Original Sample Type".
   sample_type <- report$`Sample Type`
+  if ("Original Sample Type" %in% names(report)) {
+    original_type <- report$`Original Sample Type`
+    use_original <- sample_type %in% derived_sample_types & !is.na(original_type)
+    sample_type[use_original] <- original_type[use_original]
+  }
+  sample_type[is.na(sample_type) | !nzchar(sample_type)] <- "missing"
 
   # ---- Collection date -> ISO 8601 (YYYY-MM-DD) ------------------------------
   # The report stores Excel serial numbers; also handle dates and text.
@@ -200,17 +288,28 @@ prepare_sra_metadata <- function(input_xlsx,
     } else {
       lookup(metagenome_organism, "missing")
     }
+    unmapped <- organism == "missing"
+    if (any(unmapped)) {
+      counts <- table(sample_type[unmapped])
+      warning(sum(unmapped), " sample(s) have a specimen type with no ",
+              "metagenome organism mapping (organism set to 'missing'): ",
+              paste0(names(counts), " (", counts, ")", collapse = ", "),
+              ". Add them to `metagenome_organism`; bacterial cultures and ",
+              "isolates belong in the microbe package.", call. = FALSE)
+    }
     values <- list(
       sample_name          = report$Sample,
       sample_title         = title,
       bioproject_accession = bioproject_accession,
       organism             = organism,
-      host                 = host,
+      # Environmental samples and blanks have no host.
+      host                 = ifelse(grepl("^human ", organism), host, ""),
       isolation_source     = sample_type,
       collection_date      = collection_date,
       geo_loc_name         = geo_loc_name,
       lat_lon              = lat_lon,
-      samp_collect_device  = "swab",
+      samp_collect_device  = ifelse(grepl("swab", sample_type, ignore.case = TRUE),
+                                    "swab", ""),
       source_material_id   = report$Sample
     )
     if (is.null(library_source)) library_source <- "METAGENOMIC"
@@ -322,4 +421,3 @@ prepare_sra_metadata <- function(input_xlsx,
   }
   result
 }
-
