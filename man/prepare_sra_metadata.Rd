@@ -7,7 +7,6 @@
 prepare_sra_metadata(
   input_xlsx,
   package = c("metagenome", "microbe"),
-  template_xlsx = NULL,
   output_dir = dirname(input_xlsx),
   bioproject_accession = "",
   geo_loc_name = "missing",
@@ -61,11 +60,6 @@ prepare_sra_metadata(
 
 \item{package}{BioSample package to target: `"metagenome"`
 (Metagenome.environmental.1.0) or `"microbe"` (Microbe.1.0).}
-
-\item{template_xlsx}{Path to the matching NCBI BioSample template (.xlsx).
-Its `*sample_name` header row defines the output columns and their order.
-If `NULL`, the template is looked for in the same directory as
-`input_xlsx`.}
 
 \item{output_dir}{Directory to write the outputs to (two .tsv files and one
 .xlsx with both tables). Created if needed. If `NULL`, nothing is written.}
@@ -157,8 +151,9 @@ Reorganizes a biobank sample report (e.g. `IDSampleByStudy_*.xlsx`) into
 the two tables needed for an NCBI SRA submission:
 \enumerate{
   \item BioSample attributes, laid out in the column order of an NCBI
-    BioSample package template (`Metagenome.environmental.1.0.xlsx` or
-    `Microbe.1.0.xlsx`).
+    BioSample package template (Metagenome.environmental.1.0 or
+    Microbe.1.0). The templates ship with the package as the zero-row data
+    frames `Metagenome_environmental` and `Microbe`.
   \item SRA metadata, one row per sample, linking each sample to its two
     paired-end read files, `<Sample>_R1.fastq.gz` and `<Sample>_R2.fastq.gz`.
 }

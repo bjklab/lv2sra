@@ -4,8 +4,9 @@
 #' the two tables needed for an NCBI SRA submission:
 #' \enumerate{
 #'   \item BioSample attributes, laid out in the column order of an NCBI
-#'     BioSample package template (`Metagenome.environmental.1.0.xlsx` or
-#'     `Microbe.1.0.xlsx`).
+#'     BioSample package template (Metagenome.environmental.1.0 or
+#'     Microbe.1.0). The templates ship with the package as the zero-row data
+#'     frames `Metagenome_environmental` and `Microbe`.
 #'   \item SRA metadata, one row per sample, linking each sample to its two
 #'     paired-end read files, `<Sample>_R1.fastq.gz` and `<Sample>_R2.fastq.gz`.
 #' }
@@ -22,10 +23,6 @@
 #'   "Original Sample Type" and "Microbial Species" are used when present.
 #' @param package BioSample package to target: `"metagenome"`
 #'   (Metagenome.environmental.1.0) or `"microbe"` (Microbe.1.0).
-#' @param template_xlsx Path to the matching NCBI BioSample template (.xlsx).
-#'   Its `*sample_name` header row defines the output columns and their order.
-#'   If `NULL`, the template is looked for in the same directory as
-#'   `input_xlsx`.
 #' @param output_dir Directory to write the outputs to (two .tsv files and one
 #'   .xlsx with both tables). Created if needed. If `NULL`, nothing is written.
 #' @param bioproject_accession BioProject accession (e.g. `"PRJNA123456"`).
@@ -108,7 +105,6 @@
 #' @export
 prepare_sra_metadata <- function(input_xlsx,
                                  package = c("metagenome", "microbe"),
-                                 template_xlsx = NULL,
                                  output_dir = dirname(input_xlsx),
                                  bioproject_accession = "",
                                  geo_loc_name = "missing",
@@ -190,22 +186,15 @@ prepare_sra_metadata <- function(input_xlsx,
   package <- match.arg(package)
 
   # ---- Template columns -------------------------------------------------------
-  # The header row is the first row whose first cell is "*sample_name"; the
-  # leading "#" rows are instructions. Asterisks mark mandatory fields.
-  if (is.null(template_xlsx)) {
-    template_name <- switch(package,
-                            metagenome = "Metagenome.environmental.1.0.xlsx",
-                            microbe    = "Microbe.1.0.xlsx")
-    template_xlsx <- file.path(dirname(input_xlsx), template_name)
-  }
-  template_raw <- readxl::read_excel(template_xlsx, col_names = FALSE,
-                                     .name_repair = "minimal")
-  hdr_row <- which(template_raw[[1]] %in% c("*sample_name", "sample_name"))[1]
-  if (is.na(hdr_row)) {
-    stop("Could not find the '*sample_name' header row in ", template_xlsx)
-  }
-  template_cols <- unlist(template_raw[hdr_row, ], use.names = FALSE)
-  template_cols <- template_cols[!is.na(template_cols) & nzchar(template_cols)]
+  # The bundled templates are zero-row data frames whose column names give the
+  # output columns and their order. Asterisks mark mandatory fields.
+  template <- switch(package,
+                     metagenome = lv2sra::Metagenome_environmental,
+                     microbe    = lv2sra::Microbe)
+  template_name <- switch(package,
+                          metagenome = "Metagenome.environmental.1.0",
+                          microbe    = "Microbe.1.0")
+  template_cols <- names(template)
 
   # ---- Read and validate the sample report ----------------------------------
   report <- readxl::read_excel(input_xlsx)
@@ -218,7 +207,7 @@ prepare_sra_metadata <- function(input_xlsx,
   report <- report[!is.na(report$Sample) & nzchar(report$Sample), ]
   if (anyDuplicated(report$Sample)) {
     dups <- unique(report$Sample[duplicated(report$Sample)])
-    stop("Duplicate Sample IDs in input: ", paste(head(dups, 10), collapse = ", "))
+    stop("Duplicate Sample IDs in input: ", paste(utils::head(dups, 10), collapse = ", "))
   }
 
   # ---- Paired-end read files: <Sample>_R1.fastq.gz / <Sample>_R2.fastq.gz ---
@@ -232,7 +221,7 @@ prepare_sra_metadata <- function(input_xlsx,
     if (any(incomplete)) {
       warning(sum(incomplete), " sample(s) lack an R1 and/or R2 file in ",
               fastq_dir, " and were dropped: ",
-              paste(head(report$Sample[incomplete], 10), collapse = ", "),
+              paste(utils::head(report$Sample[incomplete], 10), collapse = ", "),
               if (sum(incomplete) > 10) ", ..." else "", call. = FALSE)
     }
     report <- report[!incomplete, ]
@@ -406,7 +395,7 @@ prepare_sra_metadata <- function(input_xlsx,
   # ---- Write outputs ---------------------------------------------------------
   if (!is.null(output_dir)) {
     dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-    stem <- file.path(output_dir, sub("\\.xlsx$", "", basename(template_xlsx)))
+    stem <- file.path(output_dir, template_name)
     bs_tsv  <- paste0(stem, "_biosample_attributes.tsv")
     sra_tsv <- paste0(stem, "_sra_metadata.tsv")
     xlsx    <- paste0(stem, "_submission.xlsx")
