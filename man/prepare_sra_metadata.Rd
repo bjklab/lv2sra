@@ -121,8 +121,12 @@ body site written to `host_tissue_sampled` (microbe package only).}
 is added as the custom BioSample attribute `host_subject_id`. The internal
 "Participant" ID is never exported.}
 
-\item{fastq_dir}{Optional directory of FASTQ files. If given, samples whose
-R1 or R2 file is not found there are dropped with a warning.}
+\item{fastq_dir}{Optional directory of FASTQ files. If given, read files are
+recognized by their "R1"/"R2" designator (e.g.
+`S_250917_01842_S294_R1_001.fastq.gz`) and matched to the "Sample" ID,
+with or without a trailing Illumina sample index (`_S294`). The actual
+file names are used in `filename`/`filename2`. Samples whose R1 or R2
+file is not found are dropped with a warning.}
 
 \item{library_strategy}{SRA library strategy (e.g. `"WGS"`, `"AMPLICON"`).}
 
@@ -155,7 +159,10 @@ the two tables needed for an NCBI SRA submission:
     Microbe.1.0). The templates ship with the package as the zero-row data
     frames `Metagenome_environmental` and `Microbe`.
   \item SRA metadata, one row per sample, linking each sample to its two
-    paired-end read files, `<Sample>_R1.fastq.gz` and `<Sample>_R2.fastq.gz`.
+    paired-end read files (R1 and R2). By default these are named
+    `<Sample>_R1.fastq.gz` and `<Sample>_R2.fastq.gz`; if `fastq_dir` is
+    given, the actual files are found by their "R1"/"R2" designator, e.g.
+    `<Sample>_S294_R1_001.fastq.gz`.
 }
 Both tables share `sample_name` (the report's "Sample" column), which the
 NCBI Submission Portal uses to join SRA runs to BioSamples.

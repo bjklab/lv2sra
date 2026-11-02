@@ -8,7 +8,10 @@
 #'     Microbe.1.0). The templates ship with the package as the zero-row data
 #'     frames `Metagenome_environmental` and `Microbe`.
 #'   \item SRA metadata, one row per sample, linking each sample to its two
-#'     paired-end read files, `<Sample>_R1.fastq.gz` and `<Sample>_R2.fastq.gz`.
+#'     paired-end read files (R1 and R2). By default these are named
+#'     `<Sample>_R1.fastq.gz` and `<Sample>_R2.fastq.gz`; if `fastq_dir` is
+#'     given, the actual files are found by their "R1"/"R2" designator, e.g.
+#'     `<Sample>_S294_R1_001.fastq.gz`.
 #' }
 #' Both tables share `sample_name` (the report's "Sample" column), which the
 #' NCBI Submission Portal uses to join SRA runs to BioSamples.
@@ -72,8 +75,12 @@
 #' @param include_subject_id If `TRUE`, the report's "External Participant ID"
 #'   is added as the custom BioSample attribute `host_subject_id`. The internal
 #'   "Participant" ID is never exported.
-#' @param fastq_dir Optional directory of FASTQ files. If given, samples whose
-#'   R1 or R2 file is not found there are dropped with a warning.
+#' @param fastq_dir Optional directory of FASTQ files. If given, read files are
+#'   recognized by their "R1"/"R2" designator (e.g.
+#'   `S_250917_01842_S294_R1_001.fastq.gz`) and matched to the "Sample" ID,
+#'   with or without a trailing Illumina sample index (`_S294`). The actual
+#'   file names are used in `filename`/`filename2`. Samples whose R1 or R2
+#'   file is not found are dropped with a warning.
 #' @param library_strategy SRA library strategy (e.g. `"WGS"`, `"AMPLICON"`).
 #' @param library_source SRA library source. If `NULL`, `"METAGENOMIC"` for the
 #'   metagenome package and `"GENOMIC"` for the microbe package.
@@ -215,8 +222,28 @@ prepare_sra_metadata <- function(input_xlsx,
   report$filename2 <- paste0(report$Sample, "_R2.fastq.gz")
 
   if (!is.null(fastq_dir)) {
-    has_r1 <- file.exists(file.path(fastq_dir, report$filename))
-    has_r2 <- file.exists(file.path(fastq_dir, report$filename2))
+    # Discover read files by their R1/R2 designator, e.g.
+    # S_250917_01842_S294_R1_001.fastq.gz (Illumina/bcl2fastq naming). A file
+    # matches a sample when the text before "_R1"/"_R2" equals the Sample ID,
+    # either exactly or after removing a trailing Illumina sample index
+    # ("_S294").
+    fq_files <- list.files(fastq_dir, pattern = "_R[12](_001)?\\.f(ast)?q(\\.gz)?$")
+    fq_read  <- sub("^.*_R([12])(_001)?\\.f(ast)?q(\\.gz)?$", "\\1", fq_files)
+    fq_stem  <- sub("_R[12](_001)?\\.f(ast)?q(\\.gz)?$", "", fq_files)
+    find_reads <- function(read) {
+      idx <- fq_read == read
+      files <- fq_files[idx]
+      stems <- fq_stem[idx]
+      exact <- files[match(report$Sample, stems)]
+      noidx <- files[match(report$Sample, sub("_S[0-9]+$", "", stems))]
+      ifelse(is.na(exact), noidx, exact)
+    }
+    r1 <- find_reads("1")
+    r2 <- find_reads("2")
+    has_r1 <- !is.na(r1)
+    has_r2 <- !is.na(r2)
+    report$filename[has_r1]  <- r1[has_r1]
+    report$filename2[has_r2] <- r2[has_r2]
     incomplete <- !(has_r1 & has_r2)
     if (any(incomplete)) {
       warning(sum(incomplete), " sample(s) lack an R1 and/or R2 file in ",
