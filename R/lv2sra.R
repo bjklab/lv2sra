@@ -256,6 +256,13 @@ prepare_sra_metadata <- function(input_xlsx,
 
   n <- nrow(report)
 
+  if (n == 0) {
+          stop("No samples remain after matching to FASTQ files",
+              if (!is.null(fastq_dir)) paste0(" in '", fastq_dir, "'"),
+              ". Check that Sample IDs match file names (e.g. '-' vs '_').",
+              call. = FALSE)
+      }
+
   # ---- Specimen type ---------------------------------------------------------
   # Derivatives (DNA, Cell Lysate, ...) are described by the specimen they came
   # from, recorded in "Original Sample Type".
