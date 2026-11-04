@@ -15,6 +15,9 @@
 #' }
 #' Both tables share `sample_name` (the report's "Sample" column), which the
 #' NCBI Submission Portal uses to join SRA runs to BioSamples.
+#' If `fastq_dir` is given, a message reports the number and percentage of
+#' `input_xlsx` samples found in `fastq_dir`, and of `fastq_dir` samples found
+#' in `input_xlsx`.
 #'
 #' Samples whose "Sample Type" is a laboratory derivative (see
 #' `derived_sample_types`, e.g. DNA or Cell Lysate) are described by the
@@ -77,10 +80,19 @@
 #'   "Participant" ID is never exported.
 #' @param fastq_dir Optional directory of FASTQ files. If given, read files are
 #'   recognized by their "R1"/"R2" designator (e.g.
-#'   `S_250917_01842_S294_R1_001.fastq.gz`) and matched to the "Sample" ID,
-#'   with or without a trailing Illumina sample index (`_S294`). The actual
-#'   file names are used in `filename`/`filename2`. Samples whose R1 or R2
-#'   file is not found are dropped with a warning.
+#'   `S_250917_01842_S294_R1_001.fastq.gz`) and matched to the "Sample" ID: the
+#'   text before "_R1"/"_R2" must be the Sample ID, alone or followed by "_" and
+#'   anything else (e.g. `_S294`), so sample `S-240926-01587` matches
+#'   `S-240926-01587_S294_R1_001.fastq.gz` but sample `S-1` does not match
+#'   `S-10_R1_001.fastq.gz`. Matching is case-sensitive and character-exact, so
+#'   `-` and `_` are not interchangeable. The actual file names are used in
+#'   `filename`/`filename2`. Samples whose R1 or R2 file is not found are dropped
+#'   with a warning. If a sample matches more than one pair of files, one pair is
+#'   used and a warning names the sample. A FASTQ sample is one unique file name
+#'   stem (the text before "_R1"/"_R2"). Sample name matches are summarized in a
+#'   console message (see Description); a sample with only one of its two read
+#'   files still counts as found there, because its name matches, but is dropped
+#'   from the output.
 #' @param library_strategy SRA library strategy (e.g. `"WGS"`, `"AMPLICON"`).
 #' @param library_source SRA library source. If `NULL`, `"METAGENOMIC"` for the
 #'   metagenome package and `"GENOMIC"` for the microbe package.
@@ -224,26 +236,62 @@ prepare_sra_metadata <- function(input_xlsx,
   if (!is.null(fastq_dir)) {
     # Discover read files by their R1/R2 designator, e.g.
     # S_250917_01842_S294_R1_001.fastq.gz (Illumina/bcl2fastq naming). A file
-    # matches a sample when the text before "_R1"/"_R2" equals the Sample ID,
-    # either exactly or after removing a trailing Illumina sample index
-    # ("_S294").
+    # matches a sample when the text before "_R1"/"_R2" is the Sample ID, alone
+    # or followed by "_" and anything else ("_S294", "_S572_L001"). The "_"
+    # keeps sample S-1 from claiming the files of sample S-10.
     fq_files <- list.files(fastq_dir, pattern = "_R[12](_001)?\\.f(ast)?q(\\.gz)?$")
     fq_read  <- sub("^.*_R([12])(_001)?\\.f(ast)?q(\\.gz)?$", "\\1", fq_files)
     fq_stem  <- sub("_R[12](_001)?\\.f(ast)?q(\\.gz)?$", "", fq_files)
-    find_reads <- function(read) {
+    fq_samples <- unique(fq_stem)
+    samples <- as.character(report$Sample)
+
+    # Assign each stem to its longest matching Sample ID, so that S_1_2_S5
+    # belongs to sample S_1_2 even if the report also has a sample S_1.
+    stem_sample <- vapply(fq_samples, function(stem) {
+      hits <- samples[stem == samples | startsWith(stem, paste0(samples, "_"))]
+      if (length(hits)) hits[which.max(nchar(hits))] else NA_character_
+    }, character(1), USE.NAMES = FALSE)
+
+    stem_reads <- function(read) {
       idx <- fq_read == read
-      files <- fq_files[idx]
-      stems <- fq_stem[idx]
-      exact <- files[match(report$Sample, stems)]
-      noidx <- files[match(report$Sample, sub("_S[0-9]+$", "", stems))]
-      ifelse(is.na(exact), noidx, exact)
+      fq_files[idx][match(fq_samples, fq_stem[idx])]
     }
-    r1 <- find_reads("1")
-    r2 <- find_reads("2")
+    stem_r1 <- stem_reads("1")
+    stem_r2 <- stem_reads("2")
+
+    # Take R1 and R2 from the same stem, preferring a complete pair and then the
+    # shortest stem (an exact match to the Sample ID comes first).
+    stem_complete <- !is.na(stem_r1) & !is.na(stem_r2)
+    stem_order <- order(!stem_complete, nchar(fq_samples))
+    chosen <- stem_order[match(samples, stem_sample[stem_order])]
+    r1 <- stem_r1[chosen]
+    r2 <- stem_r2[chosen]
+
+    paired <- stem_sample[stem_complete & !is.na(stem_sample)]
+    multi <- unique(paired[duplicated(paired)])
+    if (length(multi)) {
+      warning(length(multi), " sample(s) match more than one pair of FASTQ ",
+              "files in ", fastq_dir, "; only one pair was used for each: ",
+              paste(utils::head(multi, 10), collapse = ", "),
+              if (length(multi) > 10) ", ..." else "", call. = FALSE)
+    }
+
     has_r1 <- !is.na(r1)
     has_r2 <- !is.na(r2)
     report$filename[has_r1]  <- r1[has_r1]
     report$filename2[has_r2] <- r2[has_r2]
+
+    # Report how well the sample names overlap, using the matches found above.
+    xlsx_found <- samples %in% stem_sample
+    fq_found <- !is.na(stem_sample)
+    count_pct <- function(found) {
+      sprintf("%d of %d (%.1f%%)", sum(found), length(found),
+              if (length(found)) 100 * mean(found) else 0)
+    }
+    message("Sample name matches between input_xlsx and fastq_dir:\n",
+            "  input_xlsx samples found in fastq_dir: ", count_pct(xlsx_found), "\n",
+            "  fastq_dir samples found in input_xlsx: ", count_pct(fq_found))
+
     incomplete <- !(has_r1 & has_r2)
     if (any(incomplete)) {
       warning(sum(incomplete), " sample(s) lack an R1 and/or R2 file in ",

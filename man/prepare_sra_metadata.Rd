@@ -123,10 +123,19 @@ is added as the custom BioSample attribute `host_subject_id`. The internal
 
 \item{fastq_dir}{Optional directory of FASTQ files. If given, read files are
 recognized by their "R1"/"R2" designator (e.g.
-`S_250917_01842_S294_R1_001.fastq.gz`) and matched to the "Sample" ID,
-with or without a trailing Illumina sample index (`_S294`). The actual
-file names are used in `filename`/`filename2`. Samples whose R1 or R2
-file is not found are dropped with a warning.}
+`S_250917_01842_S294_R1_001.fastq.gz`) and matched to the "Sample" ID: the
+text before "_R1"/"_R2" must be the Sample ID, alone or followed by "_" and
+anything else (e.g. `_S294`), so sample `S-240926-01587` matches
+`S-240926-01587_S294_R1_001.fastq.gz` but sample `S-1` does not match
+`S-10_R1_001.fastq.gz`. Matching is case-sensitive and character-exact, so
+`-` and `_` are not interchangeable. The actual file names are used in
+`filename`/`filename2`. Samples whose R1 or R2 file is not found are dropped
+with a warning. If a sample matches more than one pair of files, one pair is
+used and a warning names the sample. A FASTQ sample is one unique file name
+stem (the text before "_R1"/"_R2"). Sample name matches are summarized in a
+console message (see Description); a sample with only one of its two read
+files still counts as found there, because its name matches, but is dropped
+from the output.}
 
 \item{library_strategy}{SRA library strategy (e.g. `"WGS"`, `"AMPLICON"`).}
 
@@ -166,6 +175,9 @@ the two tables needed for an NCBI SRA submission:
 }
 Both tables share `sample_name` (the report's "Sample" column), which the
 NCBI Submission Portal uses to join SRA runs to BioSamples.
+If `fastq_dir` is given, a message reports the number and percentage of
+`input_xlsx` samples found in `fastq_dir`, and of `fastq_dir` samples found
+in `input_xlsx`.
 }
 \details{
 Samples whose "Sample Type" is a laboratory derivative (see
